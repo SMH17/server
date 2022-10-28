@@ -57,21 +57,23 @@ class PublicAuth extends AbstractBasic {
 	private const BRUTEFORCE_ACTION = 'public_dav_auth';
 	public const DAV_AUTHENTICATED = 'public_link_authenticated';
 
-	private IShare $share;
+	private ?IShare $share = null;
 	private IManager $shareManager;
 	private ISession $session;
 	private IRequest $request;
 	private IThrottler $throttler;
-
+	private LoggerInterface $logger;
 
 	public function __construct(IRequest $request,
-								IManager $shareManager,
-								ISession $session,
-								IThrottler $throttler) {
+		IManager $shareManager,
+		ISession $session,
+		IThrottler $throttler,
+		LoggerInterface $logger) {
 		$this->request = $request;
 		$this->shareManager = $shareManager;
 		$this->session = $session;
 		$this->throttler = $throttler;
+		$this->logger = $logger;
 
 		// setup realm
 		$defaults = new \OCP\Defaults();
@@ -108,7 +110,7 @@ class PublicAuth extends AbstractBasic {
 		} catch (\Exception $e) {
 			$class = get_class($e);
 			$msg = $e->getMessage();
-			\OC::$server->get(LoggerInterface::class)->error($e->getMessage(), ['exception' => $e]);
+			$this->logger->error($e->getMessage(), ['exception' => $e]);
 			throw new ServiceUnavailable("$class: $msg");
 		}
 	}
@@ -118,12 +120,12 @@ class PublicAuth extends AbstractBasic {
 	 * @return string
 	 * @throws NotFound
 	 */
-	private function getToken(): string	{
-		$path = $this->request->getPathInfo();
+	private function getToken(): string {
+		$path = $this->request->getPathInfo() ?: '';
 		// ['', 'dav', 'files', 'token']
 		$splittedPath = explode('/', $path);
 		
-		if (count($splittedPath) < 4 || $splittedPath[3] === '') {
+		if (count($splittedPath) < 3 || $splittedPath[3] === '') {
 			throw new NotFound();
 		}
 
@@ -140,6 +142,7 @@ class PublicAuth extends AbstractBasic {
 		$token = $this->getToken();
 
 		try {
+			/** @var IShare $share */
 			$share = $this->shareManager->getShareByToken($token);
 		} catch (ShareNotFound $e) {
 			$this->throttler->registerAttempt(self::BRUTEFORCE_ACTION, $this->request->getRemoteAddress());
@@ -176,7 +179,7 @@ class PublicAuth extends AbstractBasic {
 	 * @return bool
 	 * @throws NotAuthenticated
 	 */
-	protected function validateUserPass($username, $password): bool	{
+	protected function validateUserPass($username, $password): bool {
 		$this->throttler->sleepDelayOrThrowOnMax($this->request->getRemoteAddress(), self::BRUTEFORCE_ACTION);
 
 		$token = $this->getToken();
