@@ -78,6 +78,7 @@ class Connection extends PrimaryReadReplicaConnection {
 
 	/** @var DbDataCollector|null */
 	protected $dbDataCollector = null;
+	private int $lastConnectionCheck = 0;
 
 	/**
 	 * Initializes a new instance of the Connection class.
@@ -123,9 +124,12 @@ class Connection extends PrimaryReadReplicaConnection {
 	public function connect($connectionName = null) {
 		try {
 			if ($this->_conn) {
+				$this->reconnectIfNeeded();
 				/** @psalm-suppress InternalMethod */
 				return parent::connect();
 			}
+
+			$this->lastConnectionCheck = time();
 
 			// Only trigger the event logger for the initial connect call
 			$eventLogger = \OC::$server->get(IEventLogger::class);
@@ -617,5 +621,22 @@ class Connection extends PrimaryReadReplicaConnection {
 			$this->logger->debug('Switched to primary database', ['exception' => new \Exception()]);
 		}
 		return $result;
+	}
+
+	private function reconnectIfNeeded(): void {
+		if ($this->lastConnectionCheck + 30 >= time()) {
+			return;
+		}
+
+		try {
+			$this->_conn->query($this->getDriver()->getDatabasePlatform()->getDummySelectSQL());
+			$this->lastConnectionCheck = time();
+		} catch (Exception\ConnectionLost $e) {
+			$this->logger->warning('Exception during connectivity check, closing and reconnecting', ['exception' => $e]);
+			$this->close();
+		} catch (\Exception $e) {
+			$this->logger->warning('Exception during connectivity check, closing and reconnecting', ['exception' => $e]);
+			$this->close();
+		}
 	}
 }
