@@ -352,6 +352,15 @@ export default defineComponent({
 				return this.actionsMenuStore.opened === this.uniqueId
 			},
 			set(opened) {
+				// Only reset when opening a new menu
+				if (opened) {
+					// Reset any right click position override on close
+					// Wait for css animation to be done
+					const root = this.$root.$el as HTMLElement
+					root.style.removeProperty('--mouse-pos-x')
+					root.style.removeProperty('--mouse-pos-y')
+				}
+
 				this.actionsMenuStore.opened = opened ? this.uniqueId : null
 			},
 		},
@@ -388,6 +397,11 @@ export default defineComponent({
 			if (this.openedMenu) {
 				return
 			}
+
+			const root = this.$root.$el as HTMLElement
+			const contentRect = root.getBoundingClientRect()
+			root.style.setProperty('--mouse-pos-x', event.clientX - contentRect.left + 'px')
+			root.style.setProperty('--mouse-pos-y', event.clientY - contentRect.top + 'px')
 
 			// If the clicked row is in the selection, open global menu
 			const isMoreThanOneSelected = this.selectedFiles.length > 1
